@@ -5,6 +5,7 @@ go 1.26.2
 require (
 	cloud.google.com/go/dlp v1.32.0
 	cloud.google.com/go/vision v1.2.0
+	github.com/joho/godotenv v1.5.1
 )
 
 require (

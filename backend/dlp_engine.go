@@ -5,14 +5,16 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log"
+	"os"
 	"strings"
 	"time"
 
 	dlp "cloud.google.com/go/dlp/apiv2"
 	"cloud.google.com/go/dlp/apiv2/dlppb"
+	"github.com/joho/godotenv"
 )
 
-// The structure of our legal compliance receipt
 type AuditReceipt struct {
 	Timestamp        string `json:"timestamp"`
 	RowsProcessed    int    `json:"rowsProcessed"`
@@ -20,7 +22,6 @@ type AuditReceipt struct {
 	TransactionHash  string `json:"transactionHash"`
 }
 
-// Upgraded response structure to include the receipt
 type SecureResponse struct {
 	Status     string       `json:"status"`
 	Message    string       `json:"message"`
@@ -28,9 +29,6 @@ type SecureResponse struct {
 	Receipt    AuditReceipt `json:"receipt"`
 }
 
-const projectID = "dpdp-gateway-test"
-
-// GenerateAuditReceipt builds the SHA-256 fingerprint for the transaction
 func GenerateAuditReceipt(rawText string, safeText string) AuditReceipt {
 	rows := strings.Count(rawText, "\n")
 	if rows == 0 && len(rawText) > 0 {
@@ -40,7 +38,6 @@ func GenerateAuditReceipt(rawText string, safeText string) AuditReceipt {
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 	algo := "Google Cloud DLP v2 + Vigilant-Vault Enterprise Ruleset"
 
-	// We mix the time, the rows, the engine, and the resulting text to create a unique fingerprint
 	payload := fmt.Sprintf("%s|%d|%s|%s", timestamp, rows, algo, safeText)
 	hash := sha256.Sum256([]byte(payload))
 	hashString := hex.EncodeToString(hash[:])
@@ -53,13 +50,22 @@ func GenerateAuditReceipt(rawText string, safeText string) AuditReceipt {
 	}
 }
 
-// deidentifyData houses the core Google Cloud DLP masking rules
 func deidentifyData(ctx context.Context, client *dlp.Client, text string) (string, error) {
+
+	err := godotenv.Load()
+	if err != nil {
+		log.Println("Warning: No .env file found, falling back to system environment variables.")
+	}
+
+	projectID := os.Getenv("GCP_PROJECT_ID")
+	if projectID == "" {
+		return "", fmt.Errorf("FATAL ERROR: GCP_PROJECT_ID is not set in the .env file")
+	}
+
 	req := &dlppb.DeidentifyContentRequest{
 		Parent: fmt.Sprintf("projects/%s/locations/global", projectID),
 		InspectConfig: &dlppb.InspectConfig{
 			InfoTypes: []*dlppb.InfoType{
-
 				{Name: "PERSON_NAME"},
 				{Name: "PHONE_NUMBER"},
 				{Name: "EMAIL_ADDRESS"},
@@ -70,7 +76,6 @@ func deidentifyData(ctx context.Context, client *dlp.Client, text string) (strin
 			Transformation: &dlppb.DeidentifyConfig_InfoTypeTransformations{
 				InfoTypeTransformations: &dlppb.InfoTypeTransformations{
 					Transformations: []*dlppb.InfoTypeTransformations_InfoTypeTransformation{
-
 						{
 							InfoTypes: []*dlppb.InfoType{{Name: "PHONE_NUMBER"}},
 							PrimitiveTransformation: &dlppb.PrimitiveTransformation{
@@ -83,7 +88,6 @@ func deidentifyData(ctx context.Context, client *dlp.Client, text string) (strin
 								},
 							},
 						},
-
 						{
 							InfoTypes: []*dlppb.InfoType{{Name: "PERSON_NAME"}},
 							PrimitiveTransformation: &dlppb.PrimitiveTransformation{
@@ -98,7 +102,6 @@ func deidentifyData(ctx context.Context, client *dlp.Client, text string) (strin
 								},
 							},
 						},
-
 						{
 							InfoTypes: []*dlppb.InfoType{{Name: "EMAIL_ADDRESS"}},
 							PrimitiveTransformation: &dlppb.PrimitiveTransformation{
@@ -109,7 +112,6 @@ func deidentifyData(ctx context.Context, client *dlp.Client, text string) (strin
 								},
 							},
 						},
-
 						{
 							InfoTypes: []*dlppb.InfoType{{Name: "CREDIT_CARD_NUMBER"}},
 							PrimitiveTransformation: &dlppb.PrimitiveTransformation{
