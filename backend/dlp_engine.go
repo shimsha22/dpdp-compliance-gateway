@@ -31,7 +31,6 @@ type SecureResponse struct {
 	Receipt    AuditReceipt `json:"receipt"`
 }
 
-// getDLPClient handles the "Bypass" logic for Render vs Local
 func getDLPClient(ctx context.Context) (*dlp.Client, error) {
 	accessToken := os.Getenv("GCP_ACCESS_TOKEN")
 
@@ -68,16 +67,14 @@ func GenerateAuditReceipt(rawText string, safeText string) AuditReceipt {
 	}
 }
 
-// Updated: This function now creates its own client using the helper
 func deidentifyData(ctx context.Context, text string) (string, error) {
-	_ = godotenv.Load() // Ignore error if .env doesn't exist in production
+	_ = godotenv.Load()
 
 	projectID := os.Getenv("GCP_PROJECT_ID")
 	if projectID == "" {
 		return "", fmt.Errorf("GCP_PROJECT_ID not set")
 	}
 
-	// 🚀 USE THE SMART CLIENT HERE
 	client, err := getDLPClient(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to create dlp client: %v", err)

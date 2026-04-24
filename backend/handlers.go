@@ -9,21 +9,19 @@ import (
 	"os"
 
 	vision "cloud.google.com/go/vision/apiv1"
-	"google.golang.org/api/option" // Necessary for the Vision bypass
+	"google.golang.org/api/option"
 )
 
-// Helper for Vision Client (Similar to getDLPClient)
 func getVisionClient(ctx context.Context) (*vision.ImageAnnotatorClient, error) {
 	accessToken := os.Getenv("GCP_ACCESS_TOKEN")
 	if accessToken != "" {
-		// Use the Render token
+
 		return vision.NewImageAnnotatorClient(ctx, option.WithCredentialsJSON([]byte(accessToken)))
 	}
-	// Use local CLI
+
 	return vision.NewImageAnnotatorClient(ctx)
 }
 
-// --- TEXT HANDLER ---
 func secureTextHandler(w http.ResponseWriter, r *http.Request) {
 	var reqData struct {
 		Text string `json:"text"`
@@ -33,19 +31,16 @@ func secureTextHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1. HYBRID INTERCEPTION: Run custom Go PAN validator
 	preProcessedText, customPanCount := PreProcessPANs(reqData.Text)
 
-	// 2. AI PIPELINE: Send to Google Cloud DLP
 	ctx := context.Background()
-	// NOTE: We no longer create the client here; deidentifyData handles it!
+
 	safeText, err := deidentifyData(ctx, preProcessedText)
 	if err != nil {
 		http.Error(w, "DLP Pipeline Failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// 3. RECEIPT GENERATION
 	receipt := GenerateAuditReceipt(reqData.Text, safeText)
 	if customPanCount > 0 {
 		receipt.AlgorithmVersion += " (Hybrid PAN Interception Active)"
@@ -55,7 +50,6 @@ func secureTextHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(SecureResponse{Status: "Success", Message: "Text secured.", SecureText: safeText, Receipt: receipt})
 }
 
-// --- IMAGE HANDLER ---
 func secureImageHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseMultipartForm(10 << 20)
 	file, _, err := r.FormFile("image")
@@ -67,7 +61,6 @@ func secureImageHandler(w http.ResponseWriter, r *http.Request) {
 
 	ctx := context.Background()
 
-	// Using the helper for Vision too!
 	visionClient, err := getVisionClient(ctx)
 	if err != nil {
 		http.Error(w, "System Error: Vision Client failed.", http.StatusInternalServerError)
@@ -92,17 +85,14 @@ func secureImageHandler(w http.ResponseWriter, r *http.Request) {
 		extractedText = annotations[0].Description
 	}
 
-	// 1. HYBRID INTERCEPTION
 	preProcessedText, customPanCount := PreProcessPANs(extractedText)
 
-	// 2. AI PIPELINE
 	safeText, err := deidentifyData(ctx, preProcessedText)
 	if err != nil {
 		http.Error(w, "DLP Pipeline Failed.", http.StatusInternalServerError)
 		return
 	}
 
-	// 3. RECEIPT GENERATION
 	receipt := GenerateAuditReceipt(extractedText, safeText)
 	if customPanCount > 0 {
 		receipt.AlgorithmVersion += " (Hybrid PAN Interception Active)"
@@ -112,7 +102,6 @@ func secureImageHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(SecureResponse{Status: "Success", Message: "Image secured.", SecureText: safeText, Receipt: receipt})
 }
 
-// --- CSV BATCH HANDLER ---
 func secureCSVHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseMultipartForm(10 << 20)
 	file, _, err := r.FormFile("csv")
@@ -129,10 +118,8 @@ func secureCSVHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	rawCSVText := string(fileBytes)
 
-	// 1. HYBRID INTERCEPTION
 	preProcessedText, customPanCount := PreProcessPANs(rawCSVText)
 
-	// 2. AI PIPELINE
 	ctx := context.Background()
 	safeCSVText, err := deidentifyData(ctx, preProcessedText)
 	if err != nil {
@@ -140,7 +127,6 @@ func secureCSVHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. RECEIPT GENERATION
 	receipt := GenerateAuditReceipt(rawCSVText, safeCSVText)
 	if customPanCount > 0 {
 		receipt.AlgorithmVersion += " (Hybrid PAN Interception Active)"
