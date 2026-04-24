@@ -6,9 +6,22 @@ import (
 	"io"
 	"net/http"
 
-	dlp "cloud.google.com/go/dlp/apiv2"
+	"os"
+
 	vision "cloud.google.com/go/vision/apiv1"
+	"google.golang.org/api/option" // Necessary for the Vision bypass
 )
+
+// Helper for Vision Client (Similar to getDLPClient)
+func getVisionClient(ctx context.Context) (*vision.ImageAnnotatorClient, error) {
+	accessToken := os.Getenv("GCP_ACCESS_TOKEN")
+	if accessToken != "" {
+		// Use the Render token
+		return vision.NewImageAnnotatorClient(ctx, option.WithCredentialsJSON([]byte(accessToken)))
+	}
+	// Use local CLI
+	return vision.NewImageAnnotatorClient(ctx)
+}
 
 // --- TEXT HANDLER ---
 func secureTextHandler(w http.ResponseWriter, r *http.Request) {
@@ -25,16 +38,10 @@ func secureTextHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 2. AI PIPELINE: Send to Google Cloud DLP
 	ctx := context.Background()
-	client, err := dlp.NewClient(ctx)
+	// NOTE: We no longer create the client here; deidentifyData handles it!
+	safeText, err := deidentifyData(ctx, preProcessedText)
 	if err != nil {
-		http.Error(w, "Internal System Error: Could not connect to Google Cloud.", http.StatusInternalServerError)
-		return
-	}
-	defer client.Close()
-
-	safeText, err := deidentifyData(ctx, client, preProcessedText)
-	if err != nil {
-		http.Error(w, "DLP Pipeline Failed: Unable to process text securely.", http.StatusInternalServerError)
+		http.Error(w, "DLP Pipeline Failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -50,31 +57,33 @@ func secureTextHandler(w http.ResponseWriter, r *http.Request) {
 
 // --- IMAGE HANDLER ---
 func secureImageHandler(w http.ResponseWriter, r *http.Request) {
-	r.ParseMultipartForm(10 << 20) // 10 MB limit
+	r.ParseMultipartForm(10 << 20)
 	file, _, err := r.FormFile("image")
 	if err != nil {
-		http.Error(w, "Invalid request: Missing or corrupted image file.", http.StatusBadRequest)
+		http.Error(w, "Invalid request: Missing image file.", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
 
 	ctx := context.Background()
-	visionClient, err := vision.NewImageAnnotatorClient(ctx)
+
+	// Using the helper for Vision too!
+	visionClient, err := getVisionClient(ctx)
 	if err != nil {
-		http.Error(w, "Internal System Error: Could not connect to Google Vision.", http.StatusInternalServerError)
+		http.Error(w, "System Error: Vision Client failed.", http.StatusInternalServerError)
 		return
 	}
 	defer visionClient.Close()
 
 	image, err := vision.NewImageFromReader(file)
 	if err != nil {
-		http.Error(w, "Invalid request: Could not read image data.", http.StatusBadRequest)
+		http.Error(w, "Invalid request: Could not read image.", http.StatusBadRequest)
 		return
 	}
 
 	annotations, err := visionClient.DetectTexts(ctx, image, nil, 10)
 	if err != nil {
-		http.Error(w, "Vision Pipeline Failed: Could not extract text from image.", http.StatusInternalServerError)
+		http.Error(w, "Vision Pipeline Failed.", http.StatusInternalServerError)
 		return
 	}
 
@@ -87,16 +96,9 @@ func secureImageHandler(w http.ResponseWriter, r *http.Request) {
 	preProcessedText, customPanCount := PreProcessPANs(extractedText)
 
 	// 2. AI PIPELINE
-	dlpClient, err := dlp.NewClient(ctx)
+	safeText, err := deidentifyData(ctx, preProcessedText)
 	if err != nil {
-		http.Error(w, "Internal System Error: Could not connect to Google Cloud DLP.", http.StatusInternalServerError)
-		return
-	}
-	defer dlpClient.Close()
-
-	safeText, err := deidentifyData(ctx, dlpClient, preProcessedText)
-	if err != nil {
-		http.Error(w, "DLP Pipeline Failed: Unable to process extracted text securely.", http.StatusInternalServerError)
+		http.Error(w, "DLP Pipeline Failed.", http.StatusInternalServerError)
 		return
 	}
 
@@ -107,7 +109,7 @@ func secureImageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(SecureResponse{Status: "Success", Message: "Image digitized and secured.", SecureText: safeText, Receipt: receipt})
+	json.NewEncoder(w).Encode(SecureResponse{Status: "Success", Message: "Image secured.", SecureText: safeText, Receipt: receipt})
 }
 
 // --- CSV BATCH HANDLER ---
@@ -115,14 +117,14 @@ func secureCSVHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseMultipartForm(10 << 20)
 	file, _, err := r.FormFile("csv")
 	if err != nil {
-		http.Error(w, "Invalid request: Missing or corrupted CSV file.", http.StatusBadRequest)
+		http.Error(w, "Invalid request: Missing CSV file.", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
 
 	fileBytes, err := io.ReadAll(file)
 	if err != nil || len(fileBytes) == 0 {
-		http.Error(w, "Invalid request: File is completely empty or unreadable.", http.StatusBadRequest)
+		http.Error(w, "Invalid request: Empty CSV.", http.StatusBadRequest)
 		return
 	}
 	rawCSVText := string(fileBytes)
@@ -132,16 +134,9 @@ func secureCSVHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 2. AI PIPELINE
 	ctx := context.Background()
-	client, err := dlp.NewClient(ctx)
+	safeCSVText, err := deidentifyData(ctx, preProcessedText)
 	if err != nil {
-		http.Error(w, "Internal System Error: Could not connect to Google Cloud.", http.StatusInternalServerError)
-		return
-	}
-	defer client.Close()
-
-	safeCSVText, err := deidentifyData(ctx, client, preProcessedText)
-	if err != nil {
-		http.Error(w, "DLP Pipeline Failed: Unable to process document securely.", http.StatusInternalServerError)
+		http.Error(w, "DLP Pipeline Failed.", http.StatusInternalServerError)
 		return
 	}
 
@@ -154,7 +149,7 @@ func secureCSVHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(SecureResponse{
 		Status:     "Success",
-		Message:    "CSV batch processed with Hybrid Ruleset.",
+		Message:    "CSV batch processed.",
 		SecureText: safeCSVText,
 		Receipt:    receipt,
 	})

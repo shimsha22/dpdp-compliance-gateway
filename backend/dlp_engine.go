@@ -13,6 +13,8 @@ import (
 	dlp "cloud.google.com/go/dlp/apiv2"
 	"cloud.google.com/go/dlp/apiv2/dlppb"
 	"github.com/joho/godotenv"
+	"golang.org/x/oauth2"
+	"google.golang.org/api/option"
 )
 
 type AuditReceipt struct {
@@ -27,6 +29,22 @@ type SecureResponse struct {
 	Message    string       `json:"message"`
 	SecureText string       `json:"secureText"`
 	Receipt    AuditReceipt `json:"receipt"`
+}
+
+// getDLPClient handles the "Bypass" logic for Render vs Local
+func getDLPClient(ctx context.Context) (*dlp.Client, error) {
+	accessToken := os.Getenv("GCP_ACCESS_TOKEN")
+
+	if accessToken != "" {
+		log.Println("Production Mode: Using temporary Access Token.")
+		tokenSource := oauth2.StaticTokenSource(&oauth2.Token{
+			AccessToken: accessToken,
+		})
+		return dlp.NewClient(ctx, option.WithTokenSource(tokenSource))
+	}
+
+	log.Println("Development Mode: Using local Google CLI credentials.")
+	return dlp.NewClient(ctx)
 }
 
 func GenerateAuditReceipt(rawText string, safeText string) AuditReceipt {
@@ -50,17 +68,21 @@ func GenerateAuditReceipt(rawText string, safeText string) AuditReceipt {
 	}
 }
 
-func deidentifyData(ctx context.Context, client *dlp.Client, text string) (string, error) {
-
-	err := godotenv.Load()
-	if err != nil {
-		log.Println("Warning: No .env file found, falling back to system environment variables.")
-	}
+// Updated: This function now creates its own client using the helper
+func deidentifyData(ctx context.Context, text string) (string, error) {
+	_ = godotenv.Load() // Ignore error if .env doesn't exist in production
 
 	projectID := os.Getenv("GCP_PROJECT_ID")
 	if projectID == "" {
-		return "", fmt.Errorf("FATAL ERROR: GCP_PROJECT_ID is not set in the .env file")
+		return "", fmt.Errorf("GCP_PROJECT_ID not set")
 	}
+
+	// 🚀 USE THE SMART CLIENT HERE
+	client, err := getDLPClient(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to create dlp client: %v", err)
+	}
+	defer client.Close()
 
 	req := &dlppb.DeidentifyContentRequest{
 		Parent: fmt.Sprintf("projects/%s/locations/global", projectID),
