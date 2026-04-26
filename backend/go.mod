@@ -6,6 +6,7 @@ require (
 	cloud.google.com/go/dlp v1.32.0
 	cloud.google.com/go/vision v1.2.0
 	github.com/joho/godotenv v1.5.1
+	github.com/rs/cors v1.11.1
 	google.golang.org/api v0.274.0
 )
 
