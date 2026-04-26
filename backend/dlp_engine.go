@@ -13,7 +13,6 @@ import (
 	dlp "cloud.google.com/go/dlp/apiv2"
 	"cloud.google.com/go/dlp/apiv2/dlppb"
 	"github.com/joho/godotenv"
-	"golang.org/x/oauth2"
 	"google.golang.org/api/option"
 )
 
@@ -32,17 +31,15 @@ type SecureResponse struct {
 }
 
 func getDLPClient(ctx context.Context) (*dlp.Client, error) {
-	accessToken := os.Getenv("GCP_ACCESS_TOKEN")
 
-	if accessToken != "" {
-		log.Println("Production Mode: Using temporary Access Token.")
-		tokenSource := oauth2.StaticTokenSource(&oauth2.Token{
-			AccessToken: accessToken,
-		})
-		return dlp.NewClient(ctx, option.WithTokenSource(tokenSource))
+	credsJSON := os.Getenv("GCP_CREDS_JSON")
+
+	if credsJSON != "" {
+		log.Println("Production Mode: Using Service Account Credentials from Environment.")
+		return dlp.NewClient(ctx, option.WithCredentialsJSON([]byte(credsJSON)))
 	}
 
-	log.Println("Development Mode: Using local Google CLI credentials.")
+	log.Println("Development Mode: Using local default credentials.")
 	return dlp.NewClient(ctx)
 }
 
@@ -72,12 +69,11 @@ func deidentifyData(ctx context.Context, text string) (string, error) {
 
 	projectID := os.Getenv("GCP_PROJECT_ID")
 	if projectID == "" {
-		return "", fmt.Errorf("GCP_PROJECT_ID not set")
+		return "", fmt.Errorf("FATAL: GCP_PROJECT_ID not set in environment")
 	}
-
 	client, err := getDLPClient(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to create dlp client: %v", err)
+		return "", fmt.Errorf("failed to create DLP client: %v", err)
 	}
 	defer client.Close()
 
