@@ -14,9 +14,7 @@ function App() {
   const [verifyCSV, setVerifyCSV] = useState(null);
   const [verifyJSON, setVerifyJSON] = useState(null);
   const [verifyResult, setVerifyResult] = useState(null); 
-
-  // --- RENDER CONFIGURATION ---
-  const API_BASE_URL = "https://vigilant-vault-api.onrender.com";
+  const API_BASE_URL = "https://dpdp-compliance-gateway.onrender.com/";
 
   const handleProcessData = async () => {
     setIsScanning(true);
@@ -25,7 +23,7 @@ function App() {
 
     try {
       let response;
-      // FIX: Using full API_BASE_URL for all production requests
+     
       if (activeTab === 'text') {
         response = await fetch(`${API_BASE_URL}/api/secure`, {
           method: 'POST',
