@@ -14,7 +14,7 @@ function App() {
   const [verifyCSV, setVerifyCSV] = useState(null);
   const [verifyJSON, setVerifyJSON] = useState(null);
   const [verifyResult, setVerifyResult] = useState(null); 
-  const API_BASE_URL = "https://dpdp-compliance-gateway.onrender.com/";
+  const API_BASE_URL = "https://dpdp-compliance-gateway.onrender.com";
 
   const handleProcessData = async () => {
     setIsScanning(true);
