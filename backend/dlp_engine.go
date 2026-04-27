@@ -2,13 +2,9 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
-	"strings"
-	"time"
 
 	dlp "cloud.google.com/go/dlp/apiv2"
 	"cloud.google.com/go/dlp/apiv2/dlppb"
@@ -41,27 +37,6 @@ func getDLPClient(ctx context.Context) (*dlp.Client, error) {
 
 	log.Println("Development Mode: Using local default credentials.")
 	return dlp.NewClient(ctx)
-}
-
-func GenerateAuditReceipt(rawText string, safeText string) AuditReceipt {
-	rows := strings.Count(rawText, "\n")
-	if rows == 0 && len(rawText) > 0 {
-		rows = 1
-	}
-
-	timestamp := time.Now().UTC().Format(time.RFC3339)
-	algo := "Google Cloud DLP v2 + Vigilant-Vault Enterprise Ruleset"
-
-	payload := fmt.Sprintf("%s|%d|%s|%s", timestamp, rows, algo, safeText)
-	hash := sha256.Sum256([]byte(payload))
-	hashString := hex.EncodeToString(hash[:])
-
-	return AuditReceipt{
-		Timestamp:        timestamp,
-		RowsProcessed:    rows,
-		AlgorithmVersion: algo,
-		TransactionHash:  hashString,
-	}
 }
 
 func deidentifyData(ctx context.Context, text string) (string, error) {

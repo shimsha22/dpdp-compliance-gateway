@@ -15,6 +15,7 @@ func main() {
 	mux.HandleFunc("/api/secure", secureTextHandler)
 	mux.HandleFunc("/api/secure-image", secureImageHandler)
 	mux.HandleFunc("/api/secure-csv", secureCSVHandler)
+	mux.HandleFunc("/api/verify-audit", verifyAuditHandler)
 
 	c := cors.New(cors.Options{
 		AllowedOrigins: []string{

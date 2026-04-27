@@ -2,23 +2,26 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
-
 	"os"
+	"strings"
+	"time"
 
 	vision "cloud.google.com/go/vision/apiv1"
 	"google.golang.org/api/option"
 )
 
 func getVisionClient(ctx context.Context) (*vision.ImageAnnotatorClient, error) {
-	accessToken := os.Getenv("GCP_ACCESS_TOKEN")
-	if accessToken != "" {
-
-		return vision.NewImageAnnotatorClient(ctx, option.WithCredentialsJSON([]byte(accessToken)))
+	// Synchronized with your DLP credentials variable
+	credsJSON := os.Getenv("GCP_CREDS_JSON")
+	if credsJSON != "" {
+		return vision.NewImageAnnotatorClient(ctx, option.WithCredentialsJSON([]byte(credsJSON)))
 	}
-
 	return vision.NewImageAnnotatorClient(ctx)
 }
 
@@ -34,7 +37,6 @@ func secureTextHandler(w http.ResponseWriter, r *http.Request) {
 	preProcessedText, customPanCount := PreProcessPANs(reqData.Text)
 
 	ctx := context.Background()
-
 	safeText, err := deidentifyData(ctx, preProcessedText)
 	if err != nil {
 		http.Error(w, "DLP Pipeline Failed: "+err.Error(), http.StatusInternalServerError)
@@ -47,7 +49,12 @@ func secureTextHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(SecureResponse{Status: "Success", Message: "Text secured.", SecureText: safeText, Receipt: receipt})
+	json.NewEncoder(w).Encode(SecureResponse{
+		Status:     "Success",
+		Message:    "Text secured.",
+		SecureText: safeText,
+		Receipt:    receipt,
+	})
 }
 
 func secureImageHandler(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +67,6 @@ func secureImageHandler(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 
 	ctx := context.Background()
-
 	visionClient, err := getVisionClient(ctx)
 	if err != nil {
 		http.Error(w, "System Error: Vision Client failed.", http.StatusInternalServerError)
@@ -99,7 +105,12 @@ func secureImageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(SecureResponse{Status: "Success", Message: "Image secured.", SecureText: safeText, Receipt: receipt})
+	json.NewEncoder(w).Encode(SecureResponse{
+		Status:     "Success",
+		Message:    "Image secured.",
+		SecureText: safeText,
+		Receipt:    receipt,
+	})
 }
 
 func secureCSVHandler(w http.ResponseWriter, r *http.Request) {
@@ -139,4 +150,37 @@ func secureCSVHandler(w http.ResponseWriter, r *http.Request) {
 		SecureText: safeCSVText,
 		Receipt:    receipt,
 	})
+}
+
+func verifyAuditHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "Ready",
+		"message": "Zero-Trust Verification Engine is active and listening.",
+	})
+}
+
+func GenerateAuditReceipt(originalText string, securedText string) AuditReceipt {
+	timestamp := time.Now().Format(time.RFC3339)
+	// Calculate rows: split by newline and count
+	rows := strings.Count(originalText, "\n")
+	if len(originalText) > 0 && !strings.HasSuffix(originalText, "\n") {
+		rows++
+	}
+
+	version := "v1.0-ZeroTrust"
+
+	trimmedSecured := strings.TrimSpace(securedText)
+
+	payload := fmt.Sprintf("%s|%d|%s|%s", timestamp, rows, version, trimmedSecured)
+
+	hash := sha256.Sum256([]byte(payload))
+	finalHash := hex.EncodeToString(hash[:])
+
+	return AuditReceipt{
+		Timestamp:        timestamp,
+		RowsProcessed:    rows,
+		AlgorithmVersion: version,
+		TransactionHash:  finalHash,
+	}
 }
