@@ -170,10 +170,10 @@ func GenerateAuditReceipt(originalText string, securedText string) AuditReceipt 
 
 	version := "v1.0-ZeroTrust"
 
-	trimmedSecured := strings.TrimSpace(securedText)
+	trimmedSecured := strings.ReplaceAll(securedText, "\r", "")
+	trimmedSecured = strings.TrimSpace(trimmedSecured)
 
 	payload := fmt.Sprintf("%s|%d|%s|%s", timestamp, rows, version, trimmedSecured)
-
 	hash := sha256.Sum256([]byte(payload))
 	finalHash := hex.EncodeToString(hash[:])
 
