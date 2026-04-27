@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './App.css';
 
 function App() {
@@ -14,7 +14,12 @@ function App() {
   const [verifyCSV, setVerifyCSV] = useState(null);
   const [verifyJSON, setVerifyJSON] = useState(null);
   const [verifyResult, setVerifyResult] = useState(null); 
+  
   const API_BASE_URL = "https://dpdp-compliance-gateway.onrender.com";
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/verify-audit`).catch(() => {});
+  }, []);
 
   const handleProcessData = async () => {
     setIsScanning(true);
@@ -23,7 +28,6 @@ function App() {
 
     try {
       let response;
-     
       if (activeTab === 'text') {
         response = await fetch(`${API_BASE_URL}/api/secure`, {
           method: 'POST',
@@ -66,11 +70,15 @@ function App() {
     setErrorMsg(null);
 
     try {
-      const csvText = await verifyCSV.text();
+      
+      const rawCsv = await verifyCSV.text();
+      const csvText = rawCsv.replace(/\r/g, '').trim(); 
+
       const jsonText = await verifyJSON.text();
       const receipt = JSON.parse(jsonText);
 
       const payload = `${receipt.timestamp}|${receipt.rowsProcessed}|${receipt.algorithmVersion}|${csvText}`;
+      
       const msgBuffer = new TextEncoder().encode(payload);
       const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
       const hashArray = Array.from(new Uint8Array(hashBuffer));
@@ -82,6 +90,7 @@ function App() {
         setVerifyResult('fail');
       }
     } catch (error) {
+      console.error("Verification error:", error);
       setVerifyResult('invalid');
     } finally {
       setIsScanning(false);
@@ -136,7 +145,7 @@ function App() {
   };
 
   return (
-    <div style={{ maxWidth: '850px', width: '100%', padding: '40px 20px', margin: '0 auto', fontFamily: 'system-ui, -apple-system, sans-serif', color: theme.primaryText, backgroundColor: theme.bg }}>
+    <div style={{ maxWidth: '850px', width: '100%', padding: '40px 20px', margin: '0 auto', fontFamily: 'system-ui, sans-serif', color: theme.primaryText, backgroundColor: theme.bg }}>
       
       <div style={{ textAlign: 'center', marginBottom: '40px' }}>
         <h1 style={{ fontSize: '3rem', margin: '0 0 10px 0', letterSpacing: '-1px' }}>Vigilant-Vault</h1>
@@ -191,6 +200,20 @@ function App() {
           >
             {isScanning ? 'Processing...' : (activeTab === 'verify' ? 'Verify Integrity' : 'Secure Data')}
           </button>
+
+          {/* VERIFICATION RESULT UI */}
+          {activeTab === 'verify' && verifyResult && (
+            <div style={{
+              marginTop: '20px', padding: '15px', borderRadius: '8px', textAlign: 'center',
+              border: `1px solid ${verifyResult === 'success' ? theme.success : theme.danger}`,
+              backgroundColor: verifyResult === 'success' ? 'rgba(0, 255, 65, 0.1)' : 'rgba(255, 68, 68, 0.1)',
+              color: verifyResult === 'success' ? theme.success : theme.danger
+            }}>
+              {verifyResult === 'success' && <strong> Integrity Verified: Data is Authentic</strong>}
+              {verifyResult === 'fail' && <strong>Verification Failed: Data has been tampered with</strong>}
+              {verifyResult === 'invalid' && <strong> Error: Invalid Certificate Format</strong>}
+            </div>
+          )}
         </div>
       </div>
 
@@ -200,10 +223,10 @@ function App() {
           <div style={{ backgroundColor: '#000', padding: '15px', borderRadius: '6px', fontSize: '0.9rem', overflowX: 'auto', marginBottom: '20px' }}>
             <pre style={{ color: '#ccc' }}>{report.secureText}</pre>
           </div>
-          {activeTab === 'csv' && (
+          {(activeTab === 'csv' || activeTab === 'text' || activeTab === 'image') && (
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={handleDownloadCSV} style={{ flex: 1, padding: '10px', backgroundColor: 'transparent', border: `1px solid ${theme.accent}`, color: theme.accent, borderRadius: '6px' }}>Download CSV</button>
-              <button onClick={handleDownloadReceipt} style={{ flex: 1, padding: '10px', backgroundColor: theme.accent, border: 'none', color: 'white', borderRadius: '6px' }}>Download Certificate</button>
+              <button onClick={handleDownloadCSV} style={{ flex: 1, padding: '10px', backgroundColor: 'transparent', border: `1px solid ${theme.accent}`, color: theme.accent, borderRadius: '6px', cursor: 'pointer' }}>Download Secured Data</button>
+              <button onClick={handleDownloadReceipt} style={{ flex: 1, padding: '10px', backgroundColor: theme.accent, border: 'none', color: 'white', borderRadius: '6px', cursor: 'pointer' }}>Download Certificate</button>
             </div>
           )}
         </div>
